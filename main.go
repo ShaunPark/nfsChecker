@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"sync"
 	"syscall"
 	"time"
 
@@ -130,18 +129,9 @@ func (m NfsMon) Run(stopCh chan interface{}) {
 	config := m.configMgr.GetConfig()
 	interval := config.ProcessInterval
 
-	klog.Infof("Start node memory montoring. Duration [%d]", (interval / 1000))
+	klog.Infof("Start external nfs server monitoring. Duration [%d seconds]", interval)
 
-	ticker := time.NewTicker(time.Duration(interval) * time.Millisecond)
-
-	wg := sync.WaitGroup{}
-	wg.Add(1)
-	go func() {
-		<-stopCh
-		ticker.Stop()
-		klog.Info("Stopping NodeManager...")
-		wg.Done()
-	}()
+	ticker := time.NewTicker(time.Duration(interval) * time.Second)
 
 	// make channel for response to Rabbit MQ
 	responseCh = make(chan *types.BeeResponse)
@@ -171,12 +161,6 @@ func (m NfsMon) Run(stopCh chan interface{}) {
 				}
 			}
 		}()
-		go func() {
-			klog.Info(" [*] Waiting for messages. To exit press CTRL+C")
-			<-stopCh
-			// proc.Close()
-			rmqClient.Close()
-		}()
 		rmqClient.Run(stopCh)
 	}
 
@@ -185,7 +169,12 @@ func (m NfsMon) Run(stopCh chan interface{}) {
 			checkAndUpdate()
 		}
 	}()
-	wg.Wait()
+
+	klog.Info(" [*] Waiting for messages. To exit press CTRL+C")
+	<-stopCh
+	ticker.Stop()
+	rmqClient.Close()
+
 	klog.Info("End of NFS Monitor...")
 }
 
